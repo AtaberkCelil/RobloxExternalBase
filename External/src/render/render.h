@@ -10,7 +10,6 @@
 #include "../../src/memory/memory.h"
 #include "../../src/sdk/offsets.h"
 #include "../../src/sdk/structs.h"
-#include "../../src/sdk/window_manager.h"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dwmapi.lib")
@@ -143,9 +142,6 @@ public:
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-
-        WindowManager::UpdateRobloxWindowInfo();
-        WindowManager::AdjustOverlayPosition(windowHandle);
 
         if (variables::menuOpen) {
             SetWindowLong(windowHandle, GWL_EXSTYLE, WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW);
