@@ -38,4 +38,4 @@ Updated for **version-ddf02245bdbb428c**.
 
 # outdated on live, will prob never receive an update bc i'm lazy.
 
-## you can get lasted offsets at : https://imtheo.lol/offsets.
+## you can get the lasted offsets at : https://imtheo.lol/offsets.
