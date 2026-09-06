@@ -134,7 +134,7 @@ std::string memory_t::read_string(std::uint64_t address)
 	std::int32_t string_length = read<std::int32_t>(address + 0x10);
 	std::uint64_t string_address = (string_length >= 16) ? read<std::uint64_t>(address) : address;
 
-	if (string_length == 0 || string_length > 255)
+	if (string_length <= 0 || string_length > 255)
 	{
 		return "Unknown";
 	}
