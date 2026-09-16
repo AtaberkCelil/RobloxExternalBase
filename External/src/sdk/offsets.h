@@ -614,5 +614,5 @@ namespace Offsets {
     }
 }
 namespace Desync {
-    inline constexpr uintptr_t PhysicsSenderMaxBandwidthBps = 0x78d4748;
+    inline constexpr uintptr_t PhysicsSenderMaxBandwidthBps = 0x7d1be00;
 }
