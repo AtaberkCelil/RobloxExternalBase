@@ -86,10 +86,12 @@ namespace RBX {
         RbxInstance(uintptr_t addr) : Addr(addr) {}
 
         std::string GetName() {
-            uintptr_t namePtr = memory->read<uintptr_t>(Addr + Offsets::Instance::Name);
-            if (namePtr == 0) return "";
+            if (!memory_t::is_valid(Addr)) return {};
 
-            return memory->read_string(namePtr);
+            const auto nameContainer = memory->read<uintptr_t>(Addr + Offsets::Instance::NameContainer);
+            if (!memory_t::is_valid(nameContainer)) return {};
+
+            return memory->read_string(nameContainer + Offsets::Instance::Name);
         }
 
         std::string GetClass() {
@@ -243,6 +245,9 @@ namespace RBX {
             return memory->read<Mat4>(Addr + Offsets::VisualEngine::ViewMatrix);
         }
 
+        Vec2 GetDimensions() {
+            return memory->read<Vec2>(Addr + Offsets::VisualEngine::Dimensions);
+        }
 
         Vec2 WorldToViewport(const Vec3& worldPos) {
             Vec4 quat;
