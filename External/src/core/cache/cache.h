@@ -2,13 +2,10 @@
 #include "../../../src/sdk/sdk.h"
 #include "../globals/Globals.h"
 #include "../variables/variables.h"
+
 #include <vector>
 #include <string>
 #include <utility>
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <unordered_map>
 
 namespace PlayerCache {
 
@@ -16,28 +13,23 @@ namespace PlayerCache {
         if (!memory_t::is_valid(player.Addr))
             return RBX::RbxInstance(0);
 
-        const auto raw = memory->read<uintptr_t>(player.Addr + Offsets::Player::ModelInstance);
+        const auto raw = memory->read<uintptr_t>(
+            player.Addr + Offsets::Player::ModelInstance
+        );
+
         if (!memory_t::is_valid(raw))
             return RBX::RbxInstance(0);
 
         return RBX::RbxInstance(raw);
     }
 
-    inline RBX::RbxInstance FindRootPart(RBX::RbxInstance character, std::string* route = nullptr) {
+    inline RBX::RbxInstance FindRootPart(RBX::RbxInstance character) {
         auto root = character.FindChild("HumanoidRootPart");
-        if (root.Addr != 0) {
-            if (route) *route = "HumanoidRootPart";
-            return root;
-        }
 
-        for (auto child : character.GetChildList()) {
-            const auto cls = child.GetClass();
-            if (cls.find("Part") != std::string::npos) {
-                if (route) *route = "first BasePart";
-                return child;
-            }
-        }
-        return RBX::RbxInstance(0);
+        if (root.Addr == 0)
+            return RBX::RbxInstance(0);
+
+        return root;
     }
 
     struct CachedPlayer {
@@ -49,6 +41,7 @@ namespace PlayerCache {
 
         std::string name;
         RBX::Vec3 position;
+
         float health;
         float maxHealth;
         float distance;
@@ -69,59 +62,72 @@ namespace PlayerCache {
         auto playerList = Globals::players.GetChildList();
 
         auto localChar = ResolveCharacter(Globals::localPlayer);
+
         if (localChar.Addr != 0) {
             auto localRoot = FindRootPart(localChar);
+
             if (localRoot.Addr != 0)
                 localPlayerPos = localRoot.GetPos();
         }
-        localPlayerTeam = memory->read<uintptr_t>(Globals::localPlayer.Addr + Offsets::Player::Team);
+
+        localPlayerTeam = memory->read<uintptr_t>(
+            Globals::localPlayer.Addr + Offsets::Player::Team
+        );
 
         std::vector<CachedPlayer> updatedPlayers;
         updatedPlayers.reserve(playerList.size());
-        static std::unordered_map<uintptr_t, std::string> loggedFallbacks;
 
         for (auto& plr : playerList) {
-            if (plr.Addr == Globals::localPlayer.Addr) continue;
+            if (plr.Addr == Globals::localPlayer.Addr)
+                continue;
 
             auto character = ResolveCharacter(plr);
-            if (character.Addr == 0) continue;
+            if (character.Addr == 0)
+                continue;
 
             auto humanoid = character.FindChildByClass("Humanoid");
-            if (humanoid.Addr == 0) continue;
+            if (humanoid.Addr == 0)
+                continue;
 
-            std::string rootRoute;
-            auto rootPart = FindRootPart(character, &rootRoute);
-            if (rootPart.Addr == 0) continue;
+            auto rootPart = FindRootPart(character);
+            if (rootPart.Addr == 0)
+                continue;
 
-            if (rootRoute == "first BasePart") {
-                const auto fallback = "character: ModelInstance, root: first BasePart";
-                if (loggedFallbacks[plr.Addr] != fallback) {
-                    loggedFallbacks[plr.Addr] = fallback;
-                    std::cout << "[ESP fallback] " << plr.Addr << " -> " << fallback << '\n';
-                }
+            float health = memory->read<float>(
+                humanoid.Addr + Offsets::Humanoid::Health
+            );
+
+            if (variables::ESP::deadCheck && health <= 0)
+                continue;
+
+            uintptr_t teamAddr = memory->read<uintptr_t>(
+                plr.Addr + Offsets::Player::Team
+            );
+
+            if (
+                variables::teamCheck &&
+                teamAddr != 0 &&
+                teamAddr == localPlayerTeam
+            ) {
+                continue;
             }
-            else {
-                loggedFallbacks.erase(plr.Addr);
-            }
-
-            float health = memory->read<float>(humanoid.Addr + Offsets::Humanoid::Health);
-
-            if (variables::ESP::deadCheck && health <= 0) continue;
-
-            uintptr_t teamAddr = memory->read<uintptr_t>(plr.Addr + Offsets::Player::Team);
-
-            if (variables::teamCheck && teamAddr != 0 && teamAddr == localPlayerTeam) continue;
 
             CachedPlayer cachedPlayer{};
+
             cachedPlayer.playerAddr = plr.Addr;
             cachedPlayer.characterAddr = character.Addr;
             cachedPlayer.humanoidAddr = humanoid.Addr;
             cachedPlayer.rootPartAddr = rootPart.Addr;
             cachedPlayer.teamAddr = teamAddr;
+
             cachedPlayer.name = plr.GetName();
             cachedPlayer.position = rootPart.GetPos();
+
             cachedPlayer.health = health;
-            cachedPlayer.maxHealth = memory->read<float>(humanoid.Addr + Offsets::Humanoid::MaxHealth);
+            cachedPlayer.maxHealth = memory->read<float>(
+                humanoid.Addr + Offsets::Humanoid::MaxHealth
+            );
+
             cachedPlayer.distance = rootPart.CalcDistance(localPlayerPos);
             cachedPlayer.isValid = true;
 
@@ -129,6 +135,6 @@ namespace PlayerCache {
         }
 
         players = std::move(updatedPlayers);
-
     }
+
 }
