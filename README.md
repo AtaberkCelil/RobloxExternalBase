@@ -32,6 +32,7 @@ base rushed expect bugs and optimization.
 - Streamproof
 
 <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/7d4acd1c-f06f-463a-b86b-1187d1b3ad15" />
+<img width="1905" height="1079" alt="image" src="https://github.com/user-attachments/assets/9709d7a2-3514-4fe7-a802-0e8d92fce43c" />
 
 
 Updated for **version-d584fb6c717a43d9**.
