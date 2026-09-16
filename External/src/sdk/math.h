@@ -5,6 +5,8 @@
 #include <vector>
 #include <limits>
 #include <string>
+#include <cstdint>
+#include <cstdio>
 
 namespace rbx {
 	struct vector2_t {
@@ -90,11 +92,13 @@ namespace rbx {
 		vector2_t_int16() : x(0), y(0) {}
 		vector2_t_int16(int16_t x, int16_t y) : x(x), y(y) {}
 
+        // resolved warning C26498
 		static int16_t cast_int16(float value) {
-			auto min_val = (float)std::numeric_limits<int16_t>::lowest();
-			auto max_val = (float)(std::numeric_limits<int16_t>::max)();
+			constexpr float min_val = static_cast<float>(std::numeric_limits<int16_t>::lowest());
+			constexpr float max_val = static_cast<float>((std::numeric_limits<int16_t>::max)());
+
 			value = std::clamp(value, min_val, max_val);
-			return (int16_t)std::lround(value);
+			return static_cast<int16_t>(std::lround(value));
 		}
 
 		vector2_t_int16 operator+(const vector2_t_int16& other) const {
@@ -108,17 +112,20 @@ namespace rbx {
 		vector2_t_int16 operator*(const vector2_t_int16& other) const {
 			return vector2_t_int16(x * other.x, y * other.y);
 		}
-
-		vector2_t_int16 operator/(const vector2_t_int16& other) const {
-			return vector2_t_int16(x / other.x, y / other.y);
+		// fixed division by zero
+		vector2_t_int16 operator/(const vector2_t_int16& o) const {
+			return {
+				o.x ? static_cast<int16_t>(x / o.x) : static_cast<int16_t>(0),
+				o.y ? static_cast<int16_t>(y / o.y) : static_cast<int16_t>(0)
+			};
 		}
 
 		vector2_t_int16 operator*(float scalar) const {
 			return vector2_t_int16(cast_int16(x * scalar), cast_int16(y * scalar));
 		}
-
-		vector2_t_int16 operator/(float scalar) const {
-			return vector2_t_int16(cast_int16(x / scalar), cast_int16(y / scalar));
+		// fixed division by zero
+		vector2_t_int16 operator/(float s) const {
+			return s != 0.f ? vector2_t_int16(cast_int16(x / s), cast_int16(y / s)) : vector2_t_int16();
 		}
 	};
 
@@ -345,24 +352,41 @@ namespace rbx {
 			}
 			return res;
 		}
-
+		// fixed matrix3_t::from_axis_angle() with axis normalization
 		static matrix3_t from_axis_angle(const vector3_t& axis, float angle) {
 			matrix3_t res;
-			auto c = cosf(angle);
-			auto s = sinf(angle);
-			auto t = 1.f - c;
-			auto x = axis.x;
-			auto y = axis.y;
-			auto z = axis.z;
+
+			const float mag = axis.magnitude();
+
+			if (mag <= std::numeric_limits<float>::epsilon()) {
+				res.data[0] = 1.f;
+				res.data[4] = 1.f;
+				res.data[8] = 1.f;
+				return res;
+			}
+
+			const vector3_t normalized_axis = axis / mag;
+
+			const float c = cosf(angle);
+			const float s = sinf(angle);
+			const float t = 1.f - c;
+
+			const float x = normalized_axis.x;
+			const float y = normalized_axis.y;
+			const float z = normalized_axis.z;
+
 			res.data[0] = t * x * x + c;
 			res.data[1] = t * x * y - s * z;
 			res.data[2] = t * x * z + s * y;
+
 			res.data[3] = t * x * y + s * z;
 			res.data[4] = t * y * y + c;
 			res.data[5] = t * y * z - s * x;
+
 			res.data[6] = t * x * z - s * y;
 			res.data[7] = t * y * z + s * x;
 			res.data[8] = t * z * z + c;
+
 			return res;
 		}
 	};
@@ -444,15 +468,22 @@ namespace rbx {
 		static color3_t to_rgb(float r, float g, float b) {
 			return color3_t(r * 255.f, g * 255.f, b * 255.f);
 		}
-
+		// fixed color3_t::from_hex() hexadecimal parsing
 		static color3_t from_hex(std::string hex) {
-			auto temp = hex;
-			if (temp[0] == '#') temp = temp.substr(1);
-			if (temp.length() != 6) return color3_t();
-			auto r = stof(temp.substr(0, 2));
-			auto g = stof(temp.substr(2, 2));
-			auto b = stof(temp.substr(4, 2));
-			return from_rgb(r, g, b);
+			if (hex.empty()) return {};
+			if (hex[0] == '#') hex.erase(0, 1);
+			if (hex.size() != 6) return {};;
+
+			try {
+				const auto r = static_cast<float>(std::stoul(hex.substr(0, 2), nullptr, 16));
+				const auto g = static_cast<float>(std::stoul(hex.substr(2, 2), nullptr, 16));
+				const auto b = static_cast<float>(std::stoul(hex.substr(4, 2), nullptr, 16));
+
+				return from_rgb(r, g, b);
+			}
+			catch (...) {
+				return color3_t();
+			}
 		}
 
 		std::string to_hex() {
@@ -465,19 +496,44 @@ namespace rbx {
 		}
 	};
 
+	// added rotation matrix will prob not work but idk, hate math btw
+	// rep an object's position and orientation using a 3x3 rotation matrix verify if ur code work with that before use :3
 	struct cframe_t {
-		matrix3_t rotation = matrix3_t();
-		vector3_t position = vector3_t();
+		matrix3_t rotation;
+		vector3_t position;
 
-		// TODO: rewrite this to use the rotation matrix
-		/*
-		cframe_t() : right({ 1.f, 0.f, 0.f }), up({ 0.f, 1.f, 0.f }), back({ 0.f, 0.f, 1.f }), position(vector3_t()) {}
-		cframe_t(vector3_t pos) : right({ 1.f, 0.f, 0.f }), up({ 0.f, 1.f, 0.f }), back({ 0.f, 0.f, 1.f }), position(pos) {}
-		cframe_t(vector3_t r, vector3_t u, vector3_t b, vector3_t p) : right(r), up(u), back(b), position(p) {}
+		cframe_t() : rotation(), position() {
+			rotation.data[0] = 1.f;
+			rotation.data[4] = 1.f;
+			rotation.data[8] = 1.f;
+		}
 
-		vector3_t look_vector() {
-			return { -back.x, -back.y, -back.z };
-		}*/
+		cframe_t(vector3_t pos) : cframe_t() {
+			position = pos;
+		}
+
+		cframe_t(vector3_t r, vector3_t u, vector3_t b, vector3_t p)
+			: rotation(), position(p) {
+			rotation.data[0] = r.x;
+			rotation.data[1] = u.x;
+			rotation.data[2] = b.x;
+
+			rotation.data[3] = r.y;
+			rotation.data[4] = u.y;
+			rotation.data[5] = b.y;
+
+			rotation.data[6] = r.z;
+			rotation.data[7] = u.z;
+			rotation.data[8] = b.z;
+		}
+
+		vector3_t look_vector() const {
+			return {
+				-rotation.data[2],
+				-rotation.data[5],
+				-rotation.data[8]
+			};
+		}
 	};
 
 	inline vector3_t multiply(const matrix3_t& m, const vector3_t& v) {
@@ -489,8 +545,9 @@ namespace rbx {
 	}
 
 	struct udim_t {
-		float scale;
-		int offset;
+		// fixed values
+		float scale = 0.f;
+		int offset = 0;
 
 		bool equals(const udim_t& other, float epsilon = 0.01f) const {
 			return abs(scale - other.scale) < epsilon && offset == other.offset;
