@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <windows.h>
 #include <TlHelp32.h>
 #include <vector>
@@ -30,7 +30,10 @@ class memory_t final
 public:
 	memory_t() = default;
 	~memory_t() = default;
-
+	static constexpr bool is_valid(std::uint64_t address)
+	{
+		return address >= 0x10000 && address <= 0x7FFFFFFEFFFF;
+	}
 	std::uint32_t find_process_id(const std::string& process_name);
 	std::uint64_t find_module_address(const std::string& module_name);
 
