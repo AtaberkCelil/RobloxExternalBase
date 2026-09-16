@@ -4,10 +4,27 @@
 #include "../../../../src/core/variables/variables.h"
 #include "../../../../ext/imgui/imgui.h"
 #include <string>
+#include <string_view>
 #include <algorithm>
 #include <cmath>
 
 namespace Visuals {
+    // thanks to (@whowould) on github
+    inline auto is_r6_body(std::string_view name) -> bool
+    {
+        return name == "Head" || name == "Torso"
+            || name == "Left Arm" || name == "Right Arm"
+            || name == "Left Leg" || name == "Right Leg";
+    }
+    // thanks to (@whowould) on github
+    inline auto is_r15_body(std::string_view name) -> bool
+    {
+        return name == "Head" || name == "UpperTorso" || name == "LowerTorso"
+            || name == "LeftUpperArm" || name == "LeftLowerArm" || name == "LeftHand"
+            || name == "RightUpperArm" || name == "RightLowerArm" || name == "RightHand"
+            || name == "LeftUpperLeg" || name == "LeftLowerLeg" || name == "LeftFoot"
+            || name == "RightUpperLeg" || name == "RightLowerLeg" || name == "RightFoot";
+    }
 
     inline void DrawOutlinedText(ImDrawList* drawList, const ImVec2& pos, const std::string& text, ImU32 textColor) {
         drawList->AddText(ImVec2(pos.x - 1, pos.y), IM_COL32(0, 0, 0, 255), text.c_str());
@@ -24,194 +41,137 @@ namespace Visuals {
         drawList->AddLine(start, end, color, thickness);
     }
 
-    inline void DrawSkeletonBone(ImDrawList* drawList, const RBX::Vec3& pos1, const RBX::Vec3& pos2, 
-                                  const RBX::Mat4& viewMatrix, ImU32 color, float thickness, bool outline) {
-        RBX::Vec2 screenPos1 = W2S::WorldToScreen(pos1, viewMatrix);
-        RBX::Vec2 screenPos2 = W2S::WorldToScreen(pos2, viewMatrix);
+    inline void DrawSkeletonBone(ImDrawList* drawList, const RBX::Vec3& pos1, const RBX::Vec3& pos2,
+        const RBX::Mat4& viewMatrix, const RBX::Vec2& dimensions,
+        ImU32 color, float thickness, bool outline) {
+        RBX::Vec2 screenPos1{}, screenPos2{};
+        bool visible1 = W2S::WorldToScreen(pos1, viewMatrix, dimensions, screenPos1);
+        bool visible2 = W2S::WorldToScreen(pos2, viewMatrix, dimensions, screenPos2);
 
-        if ((screenPos1.X != 0 || screenPos1.Y != 0) && (screenPos2.X != 0 || screenPos2.Y != 0)) {
+        if (visible1 && visible2) {
             ImVec2 start(screenPos1.X, screenPos1.Y);
             ImVec2 end(screenPos2.X, screenPos2.Y);
             DrawLine(drawList, start, end, color, thickness, outline);
         }
     }
 
-    inline void RenderSkeleton(ImDrawList* drawList, RBX::RbxInstance character, 
-                                const RBX::Mat4& viewMatrix, bool isR6) {
-        ImU32 boneColor = IM_COL32(255, 255, 255, 255);
-        float thickness = variables::ESP::skeletonThickness;
-        bool outline = variables::ESP::skeletonOutline;
+    inline void DrawSkeletonConnection(ImDrawList* drawList, RBX::RbxInstance character,
+        std::string_view fromName, std::string_view toName, bool isR6,
+        const RBX::Mat4& viewMatrix, const RBX::Vec2& dimensions,
+        ImU32 color, float thickness, bool outline) {
+        const auto isBodyPart = [isR6](std::string_view name) {
+            return isR6 ? is_r6_body(name) : is_r15_body(name);
+        };
+
+        if (!isBodyPart(fromName) || !isBodyPart(toName)) return;
+
+        auto from = character.FindChild(std::string(fromName));
+        auto to = character.FindChild(std::string(toName));
+        if (from.Addr == 0 || to.Addr == 0) return;
+
+        const auto fromPos = from.GetPos();
+        const auto toPos = to.GetPos();
+        if (!std::isfinite(fromPos.X) || !std::isfinite(fromPos.Y) || !std::isfinite(fromPos.Z)
+            || !std::isfinite(toPos.X) || !std::isfinite(toPos.Y) || !std::isfinite(toPos.Z)) return;
+
+        DrawSkeletonBone(drawList, fromPos, toPos, viewMatrix, dimensions, color, thickness, outline);
+    }
+
+    inline void RenderSkeleton(ImDrawList* drawList, RBX::RbxInstance character,
+        const RBX::Mat4& viewMatrix, const RBX::Vec2& dimensions, bool isR6) {
+        const ImU32 boneColor = IM_COL32(255, 255, 255, 255);
+        const float thickness = variables::ESP::skeletonThickness;
+        const bool outline = variables::ESP::skeletonOutline;
 
         if (isR6) {
-            auto head = character.FindChild("Head");
-            auto torso = character.FindChild("Torso");
-            auto leftArm = character.FindChild("Left Arm");
-            auto rightArm = character.FindChild("Right Arm");
-            auto leftLeg = character.FindChild("Left Leg");
-            auto rightLeg = character.FindChild("Right Leg");
-
-            if (head.Addr == 0 || torso.Addr == 0) return;
-
-            RBX::Vec3 headPos = head.GetPos();
-            RBX::Vec3 torsoPos = torso.GetPos();
-
-            DrawSkeletonBone(drawList, headPos, torsoPos, viewMatrix, boneColor, thickness, outline);
-
-            if (leftArm.Addr != 0) {
-                RBX::Vec3 leftArmPos = leftArm.GetPos();
-                DrawSkeletonBone(drawList, torsoPos, leftArmPos, viewMatrix, boneColor, thickness, outline);
-            }
-
-            if (rightArm.Addr != 0) {
-                RBX::Vec3 rightArmPos = rightArm.GetPos();
-                DrawSkeletonBone(drawList, torsoPos, rightArmPos, viewMatrix, boneColor, thickness, outline);
-            }
-
-            if (leftLeg.Addr != 0) {
-                RBX::Vec3 leftLegPos = leftLeg.GetPos();
-                DrawSkeletonBone(drawList, torsoPos, leftLegPos, viewMatrix, boneColor, thickness, outline);
-            }
-
-            if (rightLeg.Addr != 0) {
-                RBX::Vec3 rightLegPos = rightLeg.GetPos();
-                DrawSkeletonBone(drawList, torsoPos, rightLegPos, viewMatrix, boneColor, thickness, outline);
-            }
+            DrawSkeletonConnection(drawList, character, "Head", "Torso", true, viewMatrix, dimensions, boneColor, thickness, outline);
+            DrawSkeletonConnection(drawList, character, "Torso", "Left Arm", true, viewMatrix, dimensions, boneColor, thickness, outline);
+            DrawSkeletonConnection(drawList, character, "Torso", "Right Arm", true, viewMatrix, dimensions, boneColor, thickness, outline);
+            DrawSkeletonConnection(drawList, character, "Torso", "Left Leg", true, viewMatrix, dimensions, boneColor, thickness, outline);
+            DrawSkeletonConnection(drawList, character, "Torso", "Right Leg", true, viewMatrix, dimensions, boneColor, thickness, outline);
+            return;
         }
-        else {
-            auto head = character.FindChild("Head");
-            auto upperTorso = character.FindChild("UpperTorso");
-            auto lowerTorso = character.FindChild("LowerTorso");
 
-            auto leftUpperArm = character.FindChild("LeftUpperArm");
-            auto leftLowerArm = character.FindChild("LeftLowerArm");
-            auto leftHand = character.FindChild("LeftHand");
+        DrawSkeletonConnection(drawList, character, "Head", "UpperTorso", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "UpperTorso", "LowerTorso", false, viewMatrix, dimensions, boneColor, thickness, outline);
 
-            auto rightUpperArm = character.FindChild("RightUpperArm");
-            auto rightLowerArm = character.FindChild("RightLowerArm");
-            auto rightHand = character.FindChild("RightHand");
+        DrawSkeletonConnection(drawList, character, "UpperTorso", "LeftUpperArm", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "LeftUpperArm", "LeftLowerArm", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "LeftLowerArm", "LeftHand", false, viewMatrix, dimensions, boneColor, thickness, outline);
 
-            auto leftUpperLeg = character.FindChild("LeftUpperLeg");
-            auto leftLowerLeg = character.FindChild("LeftLowerLeg");
-            auto leftFoot = character.FindChild("LeftFoot");
+        DrawSkeletonConnection(drawList, character, "UpperTorso", "RightUpperArm", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "RightUpperArm", "RightLowerArm", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "RightLowerArm", "RightHand", false, viewMatrix, dimensions, boneColor, thickness, outline);
 
-            auto rightUpperLeg = character.FindChild("RightUpperLeg");
-            auto rightLowerLeg = character.FindChild("RightLowerLeg");
-            auto rightFoot = character.FindChild("RightFoot");
+        const auto legAnchor = character.FindChild("LowerTorso").Addr != 0 ? "LowerTorso" : "UpperTorso";
+        DrawSkeletonConnection(drawList, character, legAnchor, "LeftUpperLeg", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "LeftUpperLeg", "LeftLowerLeg", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "LeftLowerLeg", "LeftFoot", false, viewMatrix, dimensions, boneColor, thickness, outline);
 
-            if (head.Addr == 0 || upperTorso.Addr == 0) return;
-
-            RBX::Vec3 headPos = head.GetPos();
-            RBX::Vec3 upperTorsoPos = upperTorso.GetPos();
-
-            DrawSkeletonBone(drawList, headPos, upperTorsoPos, viewMatrix, boneColor, thickness, outline);
-
-            if (lowerTorso.Addr != 0) {
-                RBX::Vec3 lowerTorsoPos = lowerTorso.GetPos();
-                DrawSkeletonBone(drawList, upperTorsoPos, lowerTorsoPos, viewMatrix, boneColor, thickness, outline);
-
-                if (leftUpperArm.Addr != 0) {
-                    RBX::Vec3 leftUpperArmPos = leftUpperArm.GetPos();
-                    DrawSkeletonBone(drawList, upperTorsoPos, leftUpperArmPos, viewMatrix, boneColor, thickness, outline);
-
-                    if (leftLowerArm.Addr != 0) {
-                        RBX::Vec3 leftLowerArmPos = leftLowerArm.GetPos();
-                        DrawSkeletonBone(drawList, leftUpperArmPos, leftLowerArmPos, viewMatrix, boneColor, thickness, outline);
-
-                        if (leftHand.Addr != 0) {
-                            RBX::Vec3 leftHandPos = leftHand.GetPos();
-                            DrawSkeletonBone(drawList, leftLowerArmPos, leftHandPos, viewMatrix, boneColor, thickness, outline);
-                        }
-                    }
-                }
-
-                if (rightUpperArm.Addr != 0) {
-                    RBX::Vec3 rightUpperArmPos = rightUpperArm.GetPos();
-                    DrawSkeletonBone(drawList, upperTorsoPos, rightUpperArmPos, viewMatrix, boneColor, thickness, outline);
-
-                    if (rightLowerArm.Addr != 0) {
-                        RBX::Vec3 rightLowerArmPos = rightLowerArm.GetPos();
-                        DrawSkeletonBone(drawList, rightUpperArmPos, rightLowerArmPos, viewMatrix, boneColor, thickness, outline);
-
-                        if (rightHand.Addr != 0) {
-                            RBX::Vec3 rightHandPos = rightHand.GetPos();
-                            DrawSkeletonBone(drawList, rightLowerArmPos, rightHandPos, viewMatrix, boneColor, thickness, outline);
-                        }
-                    }
-                }
-
-                if (leftUpperLeg.Addr != 0) {
-                    RBX::Vec3 leftUpperLegPos = leftUpperLeg.GetPos();
-                    DrawSkeletonBone(drawList, lowerTorsoPos, leftUpperLegPos, viewMatrix, boneColor, thickness, outline);
-
-                    if (leftLowerLeg.Addr != 0) {
-                        RBX::Vec3 leftLowerLegPos = leftLowerLeg.GetPos();
-                        DrawSkeletonBone(drawList, leftUpperLegPos, leftLowerLegPos, viewMatrix, boneColor, thickness, outline);
-
-                        if (leftFoot.Addr != 0) {
-                            RBX::Vec3 leftFootPos = leftFoot.GetPos();
-                            DrawSkeletonBone(drawList, leftLowerLegPos, leftFootPos, viewMatrix, boneColor, thickness, outline);
-                        }
-                    }
-                }
-
-                if (rightUpperLeg.Addr != 0) {
-                    RBX::Vec3 rightUpperLegPos = rightUpperLeg.GetPos();
-                    DrawSkeletonBone(drawList, lowerTorsoPos, rightUpperLegPos, viewMatrix, boneColor, thickness, outline);
-
-                    if (rightLowerLeg.Addr != 0) {
-                        RBX::Vec3 rightLowerLegPos = rightLowerLeg.GetPos();
-                        DrawSkeletonBone(drawList, rightUpperLegPos, rightLowerLegPos, viewMatrix, boneColor, thickness, outline);
-
-                        if (rightFoot.Addr != 0) {
-                            RBX::Vec3 rightFootPos = rightFoot.GetPos();
-                            DrawSkeletonBone(drawList, rightLowerLegPos, rightFootPos, viewMatrix, boneColor, thickness, outline);
-                        }
-                    }
-                }
-            }
-        }
+        DrawSkeletonConnection(drawList, character, legAnchor, "RightUpperLeg", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "RightUpperLeg", "RightLowerLeg", false, viewMatrix, dimensions, boneColor, thickness, outline);
+        DrawSkeletonConnection(drawList, character, "RightLowerLeg", "RightFoot", false, viewMatrix, dimensions, boneColor, thickness, outline);
     }
 
     inline void RenderESP(ImDrawList* drawList, const RBX::Mat4& viewMatrix)
     {
         if (!variables::ESP::enabled) return;
 
+        RBX::Vec2 dimensions = Globals::renderEngine.GetDimensions();
+        if (dimensions.X < 2.0f || dimensions.Y < 2.0f) {
+            const auto display = ImGui::GetIO().DisplaySize;
+            dimensions = { display.x, display.y };
+        }
+        if (dimensions.X < 2.0f || dimensions.Y < 2.0f) return;
+
         for (auto& plr : PlayerCache::players) {
             if (!plr.isValid) continue;
 
             auto character = RBX::RbxInstance(plr.characterAddr);
             auto head = character.FindChild("Head");
-            
-            if (head.Addr == 0) continue;
-
             auto torso = character.FindChild("Torso");
             bool isR6 = (torso.Addr != 0);
 
             RBX::RbxInstance hrp = character.FindChild("HumanoidRootPart");
-            if (hrp.Addr == 0) continue;
 
-            if (hrp.Addr == 0) continue;
+            RBX::Vec3 hrpPos = plr.position;
+            if (hrp.Addr != 0) {
+                const auto liveRootPos = hrp.GetPos();
+                if (std::isfinite(liveRootPos.X) && std::isfinite(liveRootPos.Y) && std::isfinite(liveRootPos.Z))
+                    hrpPos = liveRootPos;
+            }
 
-            RBX::Vec3 headPos = head.GetPos();
-            RBX::Vec3 hrpPos = hrp.GetPos();
+            RBX::Vec3 headPos = { hrpPos.X, hrpPos.Y + 2.5f, hrpPos.Z };
+            if (head.Addr != 0) {
+                const auto liveHeadPos = head.GetPos();
+                if (std::isfinite(liveHeadPos.X) && std::isfinite(liveHeadPos.Y) && std::isfinite(liveHeadPos.Z))
+                    headPos = liveHeadPos;
+            }
 
-            RBX::Vec2 headScreen = W2S::WorldToScreen(headPos, viewMatrix);
-            RBX::Vec2 hrpScreen = W2S::WorldToScreen(hrpPos, viewMatrix);
+            RBX::Vec2 headScreen{}, hrpScreen{};
+            bool headVisible = W2S::WorldToScreen(headPos, viewMatrix, dimensions, headScreen);
+            bool hrpVisible = W2S::WorldToScreen(hrpPos, viewMatrix, dimensions, hrpScreen);
 
-            if ((headScreen.X == 0 && headScreen.Y == 0) || (hrpScreen.X == 0 && hrpScreen.Y == 0)) continue;
+            if (!headVisible || !hrpVisible) continue;
+
+            if (variables::ESP::skeleton) {
+                RenderSkeleton(drawList, character, viewMatrix, dimensions, isR6);
+            }
 
             float headYOffset = isR6 ? 0.5f : 0.5f;
             float feetYOffset = isR6 ? 3.0f : 2.5f;
-            
+
             RBX::Vec3 topPos = { headPos.X, headPos.Y + headYOffset, headPos.Z };
             RBX::Vec3 bottomPos = { hrpPos.X, hrpPos.Y - feetYOffset, hrpPos.Z };
-            
-            RBX::Vec2 topScreen = W2S::WorldToScreen(topPos, viewMatrix);
-            RBX::Vec2 bottomScreen = W2S::WorldToScreen(bottomPos, viewMatrix);
 
-            if ((topScreen.X == 0 && topScreen.Y == 0) || (bottomScreen.X == 0 && bottomScreen.Y == 0)) continue;
+            RBX::Vec2 topScreen{}, bottomScreen{};
+            bool topVisible = W2S::WorldToScreen(topPos, viewMatrix, dimensions, topScreen);
+            bool bottomVisible = W2S::WorldToScreen(bottomPos, viewMatrix, dimensions, bottomScreen);
+
+            if (!topVisible || !bottomVisible) continue;
 
             float height = bottomScreen.Y - topScreen.Y;
+            if (!std::isfinite(height) || height <= 0.0f) continue;
             float width = height * 0.4f;
 
             float minX = topScreen.X - width / 2.0f;
@@ -221,10 +181,6 @@ namespace Visuals {
 
             ImVec2 screenSize = ImGui::GetIO().DisplaySize;
             if (minX < -500 || minY < -500 || maxX > screenSize.x + 500 || maxY > screenSize.y + 500) continue;
-
-            if (variables::ESP::skeleton) {
-                RenderSkeleton(drawList, character, viewMatrix, isR6);
-            }
 
             if (variables::ESP::boxes) {
                 drawList->AddRect(
@@ -295,10 +251,12 @@ namespace Visuals {
                         HWND hwnd = GetForegroundWindow();
                         if (ScreenToClient(hwnd, &cursorPos)) {
                             origin_pos = ImVec2((float)cursorPos.x, (float)cursorPos.y);
-                        } else {
+                        }
+                        else {
                             origin_pos = ImVec2(screenSize.x * 0.5f, screenSize.y);
                         }
-                    } else {
+                    }
+                    else {
                         origin_pos = ImVec2(screenSize.x * 0.5f, screenSize.y);
                     }
                     break;
@@ -312,7 +270,8 @@ namespace Visuals {
                     if (localHead.Addr != 0) {
                         auto headPos = W2S::WorldToScreen(localHead.GetPos(), viewMatrix);
                         origin_pos = ImVec2(headPos.X, headPos.Y);
-                    } else {
+                    }
+                    else {
                         origin_pos = ImVec2(screenSize.x * 0.5f, screenSize.y);
                     }
                     break;
@@ -323,7 +282,8 @@ namespace Visuals {
                     if (localHRP.Addr != 0) {
                         auto hrpPos = W2S::WorldToScreen(localHRP.GetPos(), viewMatrix);
                         origin_pos = ImVec2(hrpPos.X, hrpPos.Y);
-                    } else {
+                    }
+                    else {
                         origin_pos = ImVec2(screenSize.x * 0.5f, screenSize.y);
                     }
                     break;
@@ -345,7 +305,7 @@ namespace Visuals {
                 case 2: {
                     ImVec2 best = ImVec2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
                     float closest = FLT_MAX;
-                    
+
                     RBX::Vec2 headScreenPos = W2S::WorldToScreen(headPos, viewMatrix);
                     ImVec2 headScreen = ImVec2(headScreenPos.X, headScreenPos.Y);
                     auto delta = ImVec2(origin_pos.x - headScreen.x, origin_pos.y - headScreen.y);
